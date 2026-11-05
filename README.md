@@ -80,6 +80,25 @@ The tests mock Azure CLI and must not contact Azure. Bicep compilation, linting,
 what-if and deployments belong to later approved phases; no Bicep files have
 been built yet.
 
+## Git push from the dev container
+
+The dev container installs Git LFS, which is required by the existing pre-push
+hook. Rebuild the container after pulling changes to its build configuration.
+GitHub authentication is separate: if a push reports that it cannot obtain a
+password, sign in interactively from the container and configure Git to use
+the GitHub CLI credentials:
+
+```bash
+gh auth login --hostname github.com --git-protocol https --web
+gh auth setup-git --hostname github.com
+gh auth status --hostname github.com
+git push
+```
+
+Follow the browser/device prompts; do not paste credentials into chat or
+commit them. A push sends committed changes only, and the ignored discovery
+output must remain private.
+
 ## Scope boundaries
 
 See [limitations and natural next steps](docs/limitations.md). See
