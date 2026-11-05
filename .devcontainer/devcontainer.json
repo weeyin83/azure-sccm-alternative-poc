@@ -1,0 +1,51 @@
+{
+  "name": "Azure infrastructure and HTML starter",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/azure-cli:1": {
+      "version": "latest",
+      "installBicep": true
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/terraform:1": {
+      "version": "latest",
+      "tflint": "none",
+      "terragrunt": "none",
+      "installSentinel": false,
+      "installTFsec": false,
+      "installTerraformDocs": false
+    }
+  },
+  "remoteUser": "vscode",
+  "remoteEnv": {
+    "TF_PLUGIN_CACHE_DIR": "/home/vscode/.cache/terraform/plugins",
+    "CHECKPOINT_DISABLE": "1",
+    "AZURE_CORE_CHECK_VERSION": "false",
+    "AZURE_EXTENSION_USE_DYNAMIC_INSTALL": "no",
+    "AZURE_BICEP_USE_BINARY_FROM_PATH": "true"
+  },
+  "postCreateCommand": "bash .devcontainer/setup-user.sh && bash scripts/check-tools.sh",
+  "forwardPorts": [5500],
+  "portsAttributes": {
+    "5500": {
+      "label": "HTML Live Server",
+      "onAutoForward": "notify"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ritwickdey.LiveServer",
+        "HashiCorp.terraform",
+        "ms-azuretools.vscode-bicep",
+        "ms-vscode.azurecli",
+        "GitHub.copilot",
+        "GitHub.copilot-chat",
+        "GitHub.vscode-pull-request-github",
+        "github.vscode-github-actions"
+      ]
+    }
+  }
+}

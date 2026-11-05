@@ -1,0 +1,25 @@
+{
+  "files.eol": "\n",
+  "files.watcherExclude": {
+    "**/.terraform/**": true
+  },
+  "search.exclude": {
+    "**/.terraform": true
+  },
+  "[terraform]": {
+    "editor.defaultFormatter": "HashiCorp.terraform",
+    "editor.formatOnSave": true
+  },
+  "[terraform-vars]": {
+    "editor.defaultFormatter": "HashiCorp.terraform",
+    "editor.formatOnSave": true
+  },
+  "[bicep]": {
+    "editor.defaultFormatter": "ms-azuretools.vscode-bicep",
+    "editor.formatOnSave": true
+  },
+  "liveServer.settings.port": 5500,
+  "liveServer.settings.host": "127.0.0.1",
+  "liveServer.settings.NoBrowser": true,
+  "liveServer.settings.donotShowInfoMsg": true
+}

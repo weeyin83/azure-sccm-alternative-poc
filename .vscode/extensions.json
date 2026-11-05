@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "ritwickdey.LiveServer",
+    "HashiCorp.terraform",
+    "ms-azuretools.vscode-bicep",
+    "ms-vscode.azurecli",
+    "GitHub.copilot",
+    "GitHub.copilot-chat",
+    "GitHub.vscode-pull-request-github",
+    "github.vscode-github-actions"
+  ]
+}
