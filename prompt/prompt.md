@@ -9,7 +9,7 @@ The standing rules in .github/copilot-instructions.md apply throughout. That fil
 Knowledge sources
 Use the repo skills where relevant: azure-arc, azure-monitor, azure-resource-graph, azure-resource-manager (Bicep and API versions) and azure-policy.
 Use the Microsoft Learn MCP server to fetch current documentation. Before using any extension name, extension version, resource API version or KQL table/column, check it against Learn and note the source page in the relevant doc.
-If the documentation is unclear or contradicts itself, say so and propose how to confirm it, rather than guessing.
+If the documentation is unclear or contradicts itself, say aso and propose how to confirm it, rather than guessing.
 Customer environment
 Existing Azure Arc-enabled Windows Servers in an existing subscription.
 Unknown Azure Monitor Agent status.
