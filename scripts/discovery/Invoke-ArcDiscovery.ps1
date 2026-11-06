@@ -1,4 +1,4 @@
-#Requires -Version 7.2
+#Requires -Version 7.4
 <#
 .SYNOPSIS
 Collects read-only Azure Arc and monitoring configuration evidence.
@@ -20,6 +20,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path $PSScriptRoot 'ArcPrivateEvidence.psm1') -ErrorAction Stop
 $checks = [System.Collections.Generic.List[object]]::new()
 $resources = @{}
 $servers = [System.Collections.Generic.List[object]]::new()
@@ -27,8 +28,12 @@ $workspaceEvidence = [System.Collections.Generic.List[object]]::new()
 $policyAssignments = @{}
 $policyDefinitions = @{}
 $subscriptions = @($SubscriptionId | ForEach-Object { $_.ToString() } | Sort-Object -Unique)
-$runPath = Join-Path $PSScriptRoot ('output/{0}-{1}' -f [datetime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ'), [guid]::NewGuid().ToString('N'))
-$null = New-Item -ItemType Directory -Path $runPath
+$directoryName = '{0}-{1}' -f [datetime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ'), [guid]::NewGuid().ToString('N')
+$runPath = New-ArcPrivateEvidenceDirectory -DiscoveryDirectory $PSScriptRoot -DirectoryName $directoryName
+$jsonPath = New-ArcPrivateEvidenceFile -Directory $runPath -FileName 'report.json'
+$csvPath = New-ArcPrivateEvidenceFile -Directory $runPath -FileName 'servers.csv'
+$findingsPath = New-ArcPrivateEvidenceFile -Directory $runPath -FileName 'findings.md'
+$collectionStartedAtUtc = [datetime]::UtcNow.ToString('o')
 
 function Invoke-AzRead {
     param([Parameter(Mandatory)][string[]] $Arguments)
@@ -68,7 +73,7 @@ function Invoke-DiscoveryCheck {
     }
     catch {
         $checks.Add(@{ Name = $Name; Status = 'Failed'; Count = $null; Error = $_.Exception.Message; ScriptStackTrace = $_.ScriptStackTrace })
-        Write-Warning "Discovery check failed: $Name. See report.json for details."
+        Write-Warning 'A discovery check failed. See the private report for details.'
         return @{ Status = 'Failed'; Items = @() }
     }
 }
@@ -350,7 +355,7 @@ $summary = @($servers | ForEach-Object {
     }
 })
 $report = [ordered]@{
-    SchemaVersion = '1.0'; GeneratedAtUtc = [datetime]::UtcNow.ToString('o')
+    SchemaVersion = '1.0'; CollectionStartedAtUtc = $collectionStartedAtUtc; GeneratedAtUtc = [datetime]::UtcNow.ToString('o')
     Status = if ($failed.Count) { 'Incomplete' } else { 'CollectedPendingReview' }
     SubscriptionScope = $subscriptions; Checks = @($checks.ToArray()); Servers = @($servers.ToArray())
     Resources = @($resources.Values); Workspaces = @($workspaceEvidence.ToArray())
@@ -369,8 +374,6 @@ $report = [ordered]@{
         'Potential DCR overlap must be reviewed by counter/event selector, interval, stream, transform and destination; multiple associations alone do not prove duplicate ingestion.'
     )
 }
-$jsonPath = Join-Path $runPath 'report.json'
-$csvPath = Join-Path $runPath 'servers.csv'
 ConvertTo-Json -InputObject $report -Depth 100 | Set-Content -LiteralPath $jsonPath -Encoding utf8
 if ($summary.Count) {
     $summary | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding utf8
@@ -401,7 +404,7 @@ $findings = @(
     '3. Confirm workspace suitability and collection overlap with the owner. Never add duplicate monitoring or alerts.'
     '4. Share a sanitised summary in docs/discovery-findings.md, then stop for user review before Design.'
 )
-$findings | Set-Content -LiteralPath (Join-Path $runPath 'findings.md') -Encoding utf8
+$findings | Set-Content -LiteralPath $findingsPath -Encoding utf8
 Write-Output "Discovery evidence saved to $runPath"
 if ($failed.Count) {
     throw "Discovery incomplete: $($failed.Count) check(s) failed. Review $jsonPath; do not treat missing evidence as absence."

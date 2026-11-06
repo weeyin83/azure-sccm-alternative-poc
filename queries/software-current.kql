@@ -1,15 +1,16 @@
 // Purpose: reconcile the latest software inventory snapshot with later tracked changes.
 // Source: Log Analytics ConfigurationData and ConfigurationChange.
-// Output: last observed state per server/software/publisher; observation time is not a real-time guarantee.
+// Output: present or ambiguous software per server/software/publisher; not a real-time guarantee.
 // Populate with approved Arc resource IDs; an empty list intentionally returns no records.
 let ServerIds = dynamic([]);
+let Freshness = 1d;
 let Inventory =
     ConfigurationData
     | where TimeGenerated >= ago(30d)
     | where _ResourceId in~ (ServerIds)
     | where ConfigDataType == "Software"
     | where isnotempty(SoftwareName)
-    | project TimeGenerated, ResourceId = _ResourceId, Computer, SoftwareName, Publisher,
+    | project TimeGenerated, ResourceId = tolower(_ResourceId), Computer, SoftwareName, Publisher,
         CurrentVersion, State = "Present", Evidence = "Inventory";
 let Changes =
     ConfigurationChange
@@ -17,11 +18,20 @@ let Changes =
     | where _ResourceId in~ (ServerIds)
     | where ConfigChangeType == "Software" and ChangeCategory in ("Added", "Removed")
     | where isnotempty(SoftwareName)
-    | project TimeGenerated, ResourceId = _ResourceId, Computer, SoftwareName, Publisher,
+    | project TimeGenerated, ResourceId = tolower(_ResourceId), Computer, SoftwareName, Publisher,
         CurrentVersion = "", State = iff(ChangeCategory == "Removed", "Removed", "Present"),
         Evidence = "Change";
 union Inventory, Changes
-| summarize arg_max(TimeGenerated, *) by ResourceId, SoftwareName, Publisher
-| where State == "Present"
-| project ResourceId, Computer, SoftwareName, Publisher, CurrentVersion, LastObserved = TimeGenerated, Evidence
+| extend SoftwareKey = tolower(SoftwareName), PublisherKey = tolower(Publisher)
+| summarize States = make_set(State, 2), EvidenceTypes = make_set(Evidence, 2),
+    Computer = take_any(Computer), SoftwareName = take_any(SoftwareName), Publisher = take_any(Publisher),
+    Versions = make_set_if(CurrentVersion, isnotempty(CurrentVersion), 2)
+    by ResourceId, SoftwareKey, PublisherKey, TimeGenerated
+| summarize arg_max(TimeGenerated, *) by ResourceId, SoftwareKey, PublisherKey
+| extend State = iff(array_length(States) == 1, tostring(States[0]), "Unknown: conflicting observations")
+| where State != "Removed"
+| extend CurrentVersion = iff(array_length(Versions) == 1, tostring(Versions[0]), ""),
+    ObservationFreshness = iff(TimeGenerated < ago(Freshness), "Stale", "Recent")
+| project ResourceId, Computer, SoftwareName, Publisher, CurrentVersion, State, ObservationFreshness,
+    LastObserved = TimeGenerated, Evidence = EvidenceTypes
 | order by Computer asc, SoftwareName asc

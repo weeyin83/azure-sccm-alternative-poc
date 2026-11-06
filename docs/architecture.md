@@ -6,8 +6,9 @@
 
 The owner reviewed [discovery findings](discovery-findings.md) and confirmed:
 
-- The three Windows Arc machines are deliberately powered off. They can be
-  started when needed; their disconnected status is not currently a fault.
+- A read-only refresh on 6 November 2026 reports all three Windows Arc
+  resources Connected. Two still report AMA and CTI extensions; the third has
+  neither observed. Connected status is not evidence of healthy guest collection.
 - Focus on the owner-nominated existing Arc Log Analytics workspace. Exclude
   MCAPS and default workspaces from PoC selection, without deleting or changing
   them. Resource names and IDs remain in private evidence and future parameters.
@@ -154,7 +155,7 @@ shared rule in place. Keep performance/events out of the CTI DCR [4].
 
 | Change type | Proposed setting | Documented collection cadence / scope |
 | --- | --- | --- |
-| Windows software | Inventory and change tracking enabled | 30 minutes; retain name, version and publisher; identify added/removed software |
+| Windows software | Inventory and change tracking enabled | Change scan: 30 minutes. Inventory uses a separate scheduled cycle; the draft DCR requests 10 hours, which must be validated. Retain name, version and publisher. |
 | Windows services | Enabled, with 10-minute collection requested | Supported range 10-30 minutes; default 30 minutes; verify requested setting takes effect |
 | Registry | A short approved list plus a synthetic PoC key under HKLM | 50 minutes; no promise of a supported faster setting |
 | Files | A short approved list plus a synthetic PoC file | 30-40 minutes; use the supported minimum only after validating the settings |
@@ -193,7 +194,7 @@ Do not silently expand queries to the whole shared workspace.
 | `Event` [13] | `_ResourceId`, `TimeGenerated`, `EventLog`, `EventLevel`, `EventID`, `Source`, `RenderedDescription` | Critical/error events; warnings retained for investigation |
 | `ConfigurationData` [14] | `ConfigDataType`, `SoftwareName`, `CurrentVersion`, `Publisher`, `SvcName`, `SvcState`, `SvcStartupType` | Last reported inventory, with observation time and staleness |
 | `ConfigurationChange` [15] | `ConfigChangeType`, `ChangeCategory`, `SoftwareName`, `RegistryKey`, `FileSystemPath`, `SvcName`, `SvcState`, `SvcPreviousState`, `SvcStartupType`, `SvcPreviousStartupType` | Recent installs/removals, file/registry changes and service state/startup-type changes |
-| `Heartbeat` [16] | `_ResourceId`, `TimeGenerated` | Last AMA heartbeat per expected-online server, including never-reporting servers |
+| `Heartbeat` [16] | `_ResourceId`, `TimeGenerated` | Last observed heartbeat per expected-online server; missing bounded-history evidence is also shown |
 
 `ConfigurationData` is not refreshed for every change between inventory scans
 [3]. Current software/service views must reconcile a baseline with later
@@ -218,39 +219,70 @@ notifications are email; SMS, voice, paid webhooks and external automation are
 not enabled. No recipients or customer IDs belong in source control.
 
 Current monitoring documentation distinguishes recommended Azure VM host-metric
-alerts from guest/log alerts [17]. New enhanced monitoring can also supply
-recommended alerts with its metrics-based experience [8]. Do not claim that all
-recommended alerts are unavailable to Arc. Instead, verify each candidate's
-resource type and data source during Build; use a documented supported rule
-only if it matches this collection path and is not equivalent to an existing
-rule. This custom `Perf`/`Event` design otherwise uses log search alerts.
+alerts from guest/log alerts [17]. The documented Azure VM recommended host
+rule set explicitly excludes hybrid machines. Arc servers do support metric and
+log alerts generally [34], and enhanced monitoring can offer other
+recommendations [8]; do not generalise the VM host-rule restriction to every
+alert. This custom `Perf`/`Event` design otherwise uses log search alerts.
+
+For missing heartbeats, Microsoft recommends the workspace Heartbeat metric
+for both Azure and hybrid machines [17]. The selected log query also covers an
+explicitly expected server that has never been observed, but is more sensitive
+to ingestion delay. A metric dimension appears only after data exists [35], so
+verify how the metric rule would cover a never-reporting server before choosing
+it. The documentation describes automatic log-to-metric conversion [17],
+while the metric-alert guide says non-portal deployments require an explicit
+conversion rule and lists an Agent Health solution prerequisite [35]. Confirm
+the current AMA/Arc prerequisites, existing conversion rules and alert
+coverage rather than assuming these instructions are interchangeable. Do not
+enable another solution or conversion rule solely to resolve the ambiguity.
+A conversion rule or metric alert can add resources and charges; review the
+cost, duplicate-alert risk and any design change before deployment.
 
 | Rule | Initial condition | Evaluation / lookback | Rationale and noise controls |
 | --- | --- | --- | --- |
-| High CPU | Mean total CPU >90% with sufficient samples | 5 / 15 minutes | Sustained load, not a single spike |
-| Low memory | Available memory <500 MB with sufficient samples | 5 / 15 minutes | Tune per server; do not mistake commit ratio for RAM use |
-| Low disk capacity | Any approved fixed volume <10% free **and** <5 GB free | 5 / 15 minutes | Avoid alarms for ample space on large disks; retain worst-volume details |
+| High CPU | Mean total CPU >90% with sufficient samples | 5 / 15 minutes | Sustained load, not a single spike; insufficient or stale evidence is unknown |
+| Low memory | Mean available memory <500 reported MBytes with sufficient samples | 5 / 15 minutes | Tune per server; do not mistake commit ratio for RAM use; insufficient or stale evidence is unknown |
+| Low disk capacity | Any approved fixed volume <10% free **and** <5,120 reported Free Megabytes | 5 / 15 minutes | Avoid alarms for ample space on large disks; missing, conflicting or mismatched samples are unknown |
 | Critical Windows events | At least one approved critical event | 5 / 10 minutes | Source/event-ID filters and one stateful incident; errors remain queryable |
 | Important service stopped | Most recent fresh observation of an expected-running service is stopped | 5 / 60 minutes | Reconcile later start/state changes; CTI cadence dominates latency |
 | Unexpected software | Added software outside the approved PoC baseline/allowlist | 15 / 60 minutes | Allow the designated test application; controlled test override |
-| Monitored configuration change | Change to approved registry/file items outside the baseline | 15 / 120 minutes | One combined rule, with item/type in investigation results |
-| Missing heartbeat | No heartbeat for >15 minutes, or never received after onboarding grace | 5 / 60 minutes | Expected-online list, maintenance exclusion and stale-data labelling |
+| Monitored configuration change | Any change to approved registry/file items | 15 / 120 minutes | One combined rule; handle planned changes through an approved procedure and use investigation queries for item/type |
+| Missing heartbeat | No heartbeat for >15 minutes, or none observed in the available lookback after onboarding grace | 5 / 60 minutes | Expected-online list, maintenance exclusion and stale-data labelling; absence does not prove a server never reported |
 
 Thresholds, allowlists, sample sufficiency and evaluation settings are parameters.
 Resolve stateful alerts after recovery; changes do not constitute permanent
 current state. Split by server only where necessary and costed, with at most
 three server series per rule initially; avoid uncontrolled item/volume dimensions.
 
-The machines are intentionally offline now. Keep availability notifications
-disabled until a powered-on baseline passes; later exclude planned shutdowns
+Six [draft alert query templates](../queries/README.md#draft-alert-query-templates)
+and the existing service and heartbeat queries cover the candidate signals;
+private configuration, deployment integration and live alert testing remain
+incomplete. The generic module requires an
+explicit query history, automatic-resolution setting and resource-splitting
+choice. The API's default query range is the alert window multiplied by the
+number of evaluation periods [32]; it can therefore truncate the two-day
+service history or one-day heartbeat history. Set and review a sufficient
+override, and test that a stopped or unknown service cannot appear recovered
+solely because evidence aged out. The current service query reports stale
+evidence as unknown after one hour, which can be noisy relative to the separate
+inventory cycle; tune and test it before using it as an alert. A stateless
+alternative repeats notifications while its condition remains true [33].
+Resource dimensions add separately billed series [26]. A resolved
+change-event alert means no matching recent event, not that software or
+configuration has necessarily been restored.
+
+The machines were intentionally offline during the original discovery; the
+6 November refresh reports all three Connected. Keep availability notifications
+disabled until an expected-online baseline passes; exclude planned shutdowns
 through an explicit maintenance/expected-online configuration. Do not enable a
 monitoring rule that repeatedly alerts about the agreed lab shutdown schedule.
 Resource Graph continues to provide Arc status separately.
 
 ## 8. Resources, Bicep boundaries and scale
 
-The proposed Build layout uses `infra/main.bicep` and separate modules under
-`infra/modules/`. These are planned paths, not files built in this phase.
+The Build uses a draft `infra/main.bicep` and separate modules under
+`infra/modules/`. They are incomplete and must not be deployed yet.
 
 | Module boundary | Ownership and dependencies |
 | --- | --- |
@@ -284,9 +316,10 @@ deployment mechanism; do not run two remediation owners over the same resources.
 
 ## 9. Prerequisites, RBAC and data handling
 
-- Power on one named test server for live pre-deployment checks and later
-  validation. No power-on is needed to review this design or build local files.
-  The owner controls the host; an Arc machine resource is not its VM host.
+- Select one named test server for guest-level checks and later validation.
+  The latest read-only refresh reports all three Arc resources Connected, but
+  does not establish guest health or authorise guest changes. The owner controls
+  the host; an Arc machine resource is not its VM host.
 - Confirm supported OS, Connected Machine agent, managed identity, local extension
   permissions, DNS, outbound TLS/proxy access and AMA endpoints. The discovered
   Windows Server versions are in AMA's current supported OS list [20].
@@ -431,7 +464,7 @@ After explicit approval, deploy incrementally:
 | Step | Action | Gate before continuing |
 | --- | --- | --- |
 | 1 | Verify existing workspace, permissions, current prices and attributable costs | Reuse confirmed; no new workspace; budget assumptions accepted |
-| 2 | Owner starts the named test server; check Arc and existing AMA, install/upgrade AMA only if required | Connected and healthy; expected online |
+| 2 | Confirm the owner-selected test server is connected; inspect existing AMA and its data path, installing/upgrading only if separately approved and required | Arc connected and guest/data-path health confirmed; expected-online period recorded |
 | 3 | Prepare/reuse performance/event DCR, perform approved old-association cutover, associate new rule | No concurrent equivalent collection; heartbeat, performance and events arrive |
 | 4 | Prepare/reuse dedicated CTI rule, perform approved single-rule cutover, install/reuse CTI extension | Baseline software/services and monitored items observed after scheduled collection |
 | 5 | Reuse/create one Action Group and deduplicated alert rules | Approved receiver test succeeds; controlled alert/recovery scenarios pass |
@@ -458,11 +491,15 @@ baseline and changes, query results, alert firing/recovery and measured costs
 in the later validation documentation. Do not report "no data" as success or
 validate only one query and assume the rest work.
 
-The reversible demonstration will target one explicitly named test server,
-with a dedicated test service and synthetic application/key/file/event.
-Never stop a production service. Hold changes through their documented
+The draft demonstration targets one explicitly named test server, with an
+existing disposable test service and synthetic key/file items; an event and
+CPU load are optional. The owner has deferred test-application installation
+and removal. Never stop a production service. Hold changes through their documented
 collection windows and prepare evidence in advance; registry/software/file
 changes will not appear immediately. Any short CPU load is optional and bounded.
+The script has only simulated-host tests so far; Windows integration and
+separate guest-change approval are required before use. See the
+[demo guide](customer-demo-script.md#draft-automation-and-safeguards).
 
 **Stretch:** four Workbooks for estate, health, software/configuration changes
 and operational monitoring. Use the same parameterised query contracts,
@@ -497,7 +534,8 @@ private parameters; deployment cannot proceed without them.
 
 ## Sources
 
-Checked on 5 November 2026. Microsoft Learn MCP is unavailable in this session;
+Initial sources were checked on 5 November 2026; alert sources were checked
+again on 6 November 2026. Microsoft Learn MCP is unavailable in this session;
 Learn pages were fetched directly. No claim is made that the MCP server was used.
 The [MCP installation guide](https://github.com/MicrosoftDocs/mcp/blob/main/README.md)
 describes enabling it for later phases.
@@ -533,3 +571,7 @@ describes enabling it for later phases.
 29. [Defender Plan 2 ingestion-benefit conditions](https://learn.microsoft.com/en-us/azure/defender-for-cloud/data-ingestion-benefit)
 30. [Cost Management budgets, alerts and reporting delay](https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/tutorial-acm-create-budgets)
 31. [Workspace daily caps and their limitations](https://learn.microsoft.com/en-us/azure/azure-monitor/logs/daily-cap)
+32. [Scheduled query rule properties and query range](https://learn.microsoft.com/en-us/azure/templates/microsoft.insights/2023-12-01/scheduledqueryrules)
+33. [Stateful and stateless alerts](https://learn.microsoft.com/en-us/azure/azure-monitor/alerts/alerts-overview#alerts-and-state)
+34. [Monitoring and alerts for Arc-enabled servers](https://learn.microsoft.com/en-us/azure/azure-arc/servers/cloud-native/monitor-alerts)
+35. [Metric alerts from Log Analytics logs](https://learn.microsoft.com/en-us/azure/azure-monitor/alerts/alerts-metric-logs)

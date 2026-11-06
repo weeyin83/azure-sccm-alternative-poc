@@ -1,12 +1,11 @@
 // Purpose: show observed AMA, CTI extensions and DCR associations for Windows Arc servers.
-// Source: Azure Resource Graph Resources. Output: Azure extension/association state, not guest health.
-let machines =
-    Resources
-    | where type =~ 'microsoft.hybridcompute/machines'
-    | where tostring(properties.osType) =~ 'windows'
-    | project machineId = tolower(id), name, resourceGroup, subscriptionId, location,
-        status = tostring(properties.status);
-let extensions =
+// Sources: Azure Resource Graph Resources and insightsresources. Output: configuration, not guest health.
+Resources
+| where type =~ 'microsoft.hybridcompute/machines'
+| where tostring(properties.osType) =~ 'windows'
+| project machineId = tolower(id), name, resourceGroup, subscriptionId, location,
+    status = tostring(properties.status)
+| join kind=leftouter (
     Resources
     | where type =~ 'microsoft.hybridcompute/machines/extensions'
     | extend extensionType = tostring(properties.type),
@@ -15,18 +14,17 @@ let extensions =
     | extend isAma = publisher =~ 'Microsoft.Azure.Monitor' and extensionType =~ 'AzureMonitorWindowsAgent',
         isCti = publisher =~ 'Microsoft.Azure.ChangeTrackingAndInventory' and extensionType =~ 'ChangeTracking-Windows'
     | where isAma or isCti
-    | extend machineId = tolower(extract('^(.*)/extensions/[^/]+$', 1, id))
+    | extend machineId = extract('^(.*)/extensions/[^/]+$', 1, tolower(id))
     | summarize amaExtensions = countif(isAma), ctiExtensions = countif(isCti),
-        extensionStates = make_list(pack('type', extensionType, 'state', provisioningState)) by machineId;
-let associations =
-    Resources
+        extensionStates = make_list(pack('type', extensionType, 'state', provisioningState)) by machineId
+) on machineId
+| join kind=leftouter (
+    insightsresources
     | where type =~ 'microsoft.insights/datacollectionruleassociations'
-    | extend machineId = tolower(extract('^(.*)/providers/Microsoft\\.Insights/dataCollectionRuleAssociations/[^/]+$', 1, id))
+    | extend machineId = extract('^(.*)/providers/microsoft\\.insights/datacollectionruleassociations/[^/]+$', 1, tolower(id))
     | summarize dcrAssociationCount = count(),
-        dcrIds = make_set(tostring(properties.dataCollectionRuleId)) by machineId;
-machines
-| join kind=leftouter extensions on machineId
-| join kind=leftouter associations on machineId
+        dcrIds = make_set(tostring(properties.dataCollectionRuleId)) by machineId
+) on machineId
 | project machineId, name, resourceGroup, subscriptionId, location, status,
     amaExtensions = coalesce(amaExtensions, 0),
     ctiExtensions = coalesce(ctiExtensions, 0),

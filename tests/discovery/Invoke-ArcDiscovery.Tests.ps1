@@ -1,12 +1,18 @@
-#Requires -Version 7.2
+#Requires -Version 7.4
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
 $collectorPath = Join-Path $PSScriptRoot '../../scripts/discovery/Invoke-ArcDiscovery.ps1'
+$privateEvidenceModule = Join-Path $PSScriptRoot '../../scripts/discovery/ArcPrivateEvidence.psm1'
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('arc-discovery-tests-' + [guid]::NewGuid().ToString('N'))
-$null = New-Item -ItemType Directory -Path $testRoot
-Copy-Item -LiteralPath $collectorPath -Destination (Join-Path $testRoot 'Invoke-ArcDiscovery.ps1')
+$discoveryDirectory = Join-Path $testRoot 'scripts/discovery'
+$null = New-Item -ItemType Directory -Path $discoveryDirectory -Force
+& git init --quiet $testRoot
+if ($LASTEXITCODE -ne 0) { throw 'Unable to create the isolated test repository.' }
+'/scripts/discovery/output/' | Set-Content -LiteralPath (Join-Path $testRoot '.gitignore')
+Copy-Item -LiteralPath $collectorPath -Destination (Join-Path $discoveryDirectory 'Invoke-ArcDiscovery.ps1')
+Copy-Item -LiteralPath $privateEvidenceModule -Destination (Join-Path $discoveryDirectory 'ArcPrivateEvidence.psm1')
 $script:subscription = [guid]::NewGuid().ToString()
 $script:prefix = "/subscriptions/$script:subscription/resourceGroups/test/providers/"
 $script:machineId = $script:prefix + 'Microsoft.HybridCompute/machines/server-one'
@@ -167,15 +173,27 @@ try {
     foreach ($case in @('Complete', 'Empty', 'DeniedExtensions', 'DeniedList', 'Truncated', 'RepeatedGraphToken', 'ExternalNextLink', 'MissingDependency')) {
         $script:scenario = $case
         $failed = $false
+        $failureMessage = ''
         try {
-            & { . (Join-Path $testRoot 'Invoke-ArcDiscovery.ps1') -SubscriptionId $script:subscription } | Out-Null
+            & { . (Join-Path $discoveryDirectory 'Invoke-ArcDiscovery.ps1') -SubscriptionId $script:subscription } | Out-Null
         }
-        catch { $failed = $true }
-        $run = Get-ChildItem -LiteralPath (Join-Path $testRoot 'output') -Directory |
+        catch { $failed = $true; $failureMessage = $_.Exception.Message }
+        $run = Get-ChildItem -LiteralPath (Join-Path $discoveryDirectory 'output') -Directory |
             Sort-Object Name -Descending | Select-Object -First 1
+        Assert-Discovery ($null -ne $run) "$case creates a private evidence directory: $failureMessage"
         $report = Get-Content -LiteralPath (Join-Path $run.FullName 'report.json') -Raw | ConvertFrom-Json
         $csv = @(Import-Csv -LiteralPath (Join-Path $run.FullName 'servers.csv'))
         Assert-Discovery (Test-Path -LiteralPath (Join-Path $run.FullName 'findings.md')) "$case writes findings"
+        if (-not $IsWindows) {
+            $directoryMode = [System.IO.UnixFileMode]::UserRead -bor
+                [System.IO.UnixFileMode]::UserWrite -bor [System.IO.UnixFileMode]::UserExecute
+            $fileMode = [System.IO.UnixFileMode]::UserRead -bor [System.IO.UnixFileMode]::UserWrite
+            Assert-Discovery ([System.IO.File]::GetUnixFileMode((Join-Path $discoveryDirectory 'output')) -eq $directoryMode) 'Evidence root is owner-only'
+            Assert-Discovery ([System.IO.File]::GetUnixFileMode($run.FullName) -eq $directoryMode) 'Run directory is owner-only'
+            foreach ($name in @('report.json', 'servers.csv', 'findings.md')) {
+                Assert-Discovery ([System.IO.File]::GetUnixFileMode((Join-Path $run.FullName $name)) -eq $fileMode) "$name is owner-only"
+            }
+        }
         if ($case -in @('Complete', 'Empty')) {
             Assert-Discovery (-not $failed) "$case completes without error: $($report.Checks.Error -join '; '); $($report.Checks.ScriptStackTrace -join '; ')"
             Assert-Discovery ($report.Status -eq 'CollectedPendingReview') "$case status"
@@ -186,6 +204,9 @@ try {
             Assert-Discovery (@($report.Checks | Where-Object Status -EQ 'Failed').Count -gt 0) "$case records failure"
         }
         if ($case -eq 'Complete') {
+            $started = [datetimeoffset] $report.CollectionStartedAtUtc
+            $finished = [datetimeoffset] $report.GeneratedAtUtc
+            Assert-Discovery ($started -le $finished) 'Collection start is recorded before report generation'
             Assert-Discovery ($report.Servers.Count -eq 2 -and $csv.Count -eq 2) 'All graph pages are retained in JSON and CSV'
             Assert-Discovery ($report.Servers[0].AMA -eq 'Provisioned') 'Agent matched by publisher and type, not name'
             Assert-Discovery ($report.Servers[0].LegacyMMA -eq 'NotObserved') 'Missing agent is distinct from failed read'
@@ -202,6 +223,74 @@ try {
         Write-Output "PASS: $case"
     }
     Assert-Discovery (@($script:calls | Where-Object { ($_[0..1] -join ' ') -notin @('extension list', 'cloud show', 'account show', 'policy assignment', 'policy definition', 'policy set-definition', 'graph query', 'resource list', 'resource show', 'rest --method') }).Count -eq 0) 'No mutating CLI commands'
+    $script:scenario = 'DeniedExtensions'
+    $script:privacyFailureObserved = $false
+    $records = @(& {
+            try {
+                . (Join-Path $discoveryDirectory 'Invoke-ArcDiscovery.ps1') -SubscriptionId $script:subscription
+            }
+            catch {
+                if ($_.Exception.Message -notmatch '^Discovery incomplete:') { throw }
+                $script:privacyFailureObserved = $true
+            }
+        } 3>&1)
+    $warnings = @($records | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+    Assert-Discovery ($script:privacyFailureObserved -and $warnings.Count -gt 0) 'A failed discovery emits explicit warnings'
+    Assert-Discovery (@($warnings | Where-Object { $_.Message.Contains($script:subscription) -or $_.Message.Contains($script:machineId) }).Count -eq 0) 'Warnings omit subscription and server IDs'
+    Write-Output 'PASS: Discovery warnings omit private identifiers'
+    if (-not $IsWindows) {
+        $outputRoot = Join-Path $discoveryDirectory 'output'
+        $privateMode = [System.IO.UnixFileMode]::UserRead -bor
+            [System.IO.UnixFileMode]::UserWrite -bor [System.IO.UnixFileMode]::UserExecute
+        $insecureMode = $privateMode -bor [System.IO.UnixFileMode]::GroupRead
+        $callCount = $script:calls.Count
+        try {
+            [System.IO.File]::SetUnixFileMode($outputRoot, $insecureMode)
+            $failed = $false
+            try {
+                & { . (Join-Path $discoveryDirectory 'Invoke-ArcDiscovery.ps1') -SubscriptionId $script:subscription } | Out-Null
+            }
+            catch { $failed = $_.Exception.Message -match 'owner-only mode 700' }
+            Assert-Discovery $failed 'An insecure evidence root is rejected'
+            Assert-Discovery ($script:calls.Count -eq $callCount) 'Insecure output is rejected before Azure reads'
+        }
+        finally {
+            [System.IO.File]::SetUnixFileMode($outputRoot, $privateMode)
+        }
+        Write-Output 'PASS: Insecure evidence root rejected'
+
+        $heldOutput = Join-Path $discoveryDirectory 'test-held-output'
+        $linkTarget = Join-Path $testRoot 'test-link-target'
+        $null = New-Item -ItemType Directory -Path $linkTarget
+        Move-Item -LiteralPath $outputRoot -Destination $heldOutput
+        try {
+            $null = New-Item -ItemType SymbolicLink -Path $outputRoot -Target $linkTarget
+            $callCount = $script:calls.Count
+            $failed = $false
+            $failureMessage = ''
+            try {
+                & { . (Join-Path $discoveryDirectory 'Invoke-ArcDiscovery.ps1') -SubscriptionId $script:subscription } | Out-Null
+            }
+            catch { $failureMessage = $_.Exception.Message; $failed = $failureMessage -match 'not a link' }
+            Assert-Discovery $failed "A symbolic-link evidence root is rejected: $failureMessage"
+            Assert-Discovery ($script:calls.Count -eq $callCount) 'A linked output is rejected before Azure reads'
+        }
+        finally {
+            if (Test-Path -LiteralPath $outputRoot) { Remove-Item -LiteralPath $outputRoot -Force }
+            Move-Item -LiteralPath $heldOutput -Destination $outputRoot
+        }
+        Write-Output 'PASS: Linked evidence root rejected'
+    }
+    '!/scripts/discovery/output/' | Set-Content -LiteralPath (Join-Path $testRoot '.gitignore')
+    $callCount = $script:calls.Count
+    $failed = $false
+    try {
+        & { . (Join-Path $discoveryDirectory 'Invoke-ArcDiscovery.ps1') -SubscriptionId $script:subscription } | Out-Null
+    }
+    catch { $failed = $_.Exception.Message -match 'not confirmed as Git-ignored' }
+    Assert-Discovery $failed 'Unignored evidence is rejected'
+    Assert-Discovery ($script:calls.Count -eq $callCount) 'Unignored output is rejected before Azure reads'
+    Write-Output 'PASS: Unignored evidence rejected'
 }
 finally {
     Remove-Item -LiteralPath $testRoot -Recurse -Force

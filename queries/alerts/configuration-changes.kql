@@ -1,0 +1,33 @@
+// Purpose: flag recent changes to explicitly approved registry values and files.
+// Source: ConfigurationChange. Output: ResourceId, change count and latest change time.
+// Populate the exact observed Hive, RegistryKey, ValueName and FileSystemPath values privately.
+let RegistryItems = datatable(ResourceId:string, Hive:string, RegistryKey:string, ValueName:string)[];
+let FileItems = datatable(ResourceId:string, FileSystemPath:string)[];
+let RegistryExpected =
+    RegistryItems
+    | where isnotempty(ResourceId) and isnotempty(Hive) and isnotempty(RegistryKey)
+    | extend ResourceId = tolower(ResourceId), HiveKey = tolower(Hive),
+        RegistryKeyKey = tolower(RegistryKey), ValueNameKey = tolower(ValueName)
+    | distinct ResourceId, HiveKey, RegistryKeyKey, ValueNameKey;
+let FilesExpected =
+    FileItems
+    | where isnotempty(ResourceId) and isnotempty(FileSystemPath)
+    | extend ResourceId = tolower(ResourceId), PathKey = tolower(FileSystemPath)
+    | distinct ResourceId, PathKey;
+let RegistryChanges =
+    ConfigurationChange
+    | where TimeGenerated >= ago(2h) and ConfigChangeType == "Registry"
+    | extend ResourceId = tolower(_ResourceId), HiveKey = tolower(Hive),
+        RegistryKeyKey = tolower(RegistryKey), ValueNameKey = tolower(ValueName)
+    | join kind=inner RegistryExpected on ResourceId, HiveKey, RegistryKeyKey, ValueNameKey
+    | project ResourceId, TimeGenerated;
+let FileChanges =
+    ConfigurationChange
+    | where TimeGenerated >= ago(2h) and ConfigChangeType == "Files"
+    | extend ResourceId = tolower(_ResourceId), PathKey = tolower(FileSystemPath)
+    | join kind=inner FilesExpected on ResourceId, PathKey
+    | project ResourceId, TimeGenerated;
+union RegistryChanges, FileChanges
+| summarize ChangeCount = count(), LastChange = max(TimeGenerated) by ResourceId
+| extend MonitoringState = "Monitored configuration change observed"
+| project ResourceId, MonitoringState, ChangeCount, LastChange

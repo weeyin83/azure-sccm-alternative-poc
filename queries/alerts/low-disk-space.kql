@@ -1,0 +1,49 @@
+// Purpose: flag low free space or insufficient paired counter evidence for approved volumes.
+// Source: Perf. Output: ResourceId, volume, state, free space and observation times.
+// Populate ExpectedVolumes with approved fixed volumes; Perf alone does not identify fixed disks.
+let ExpectedVolumes = datatable(ResourceId:string, Volume:string)[];
+let ThresholdPercent = 10.0;
+let ThresholdMBytes = 5120.0;
+let MaxPairSkewSeconds = 120;
+let FreshnessCutoff = ago(5m);
+let Expected =
+    ExpectedVolumes
+    | where isnotempty(ResourceId) and isnotempty(Volume)
+    | extend ResourceId = tolower(ResourceId), Volume = tolower(Volume)
+    | distinct ResourceId, Volume;
+let PercentSamples =
+    Perf
+    | where TimeGenerated >= ago(15m)
+    | where ObjectName == "LogicalDisk" and CounterName == "% Free Space"
+    | where isnotnull(CounterValue) and CounterValue between (0.0 .. 100.0)
+    | extend ResourceId = tolower(_ResourceId), Volume = tolower(InstanceName)
+    | join kind=inner Expected on ResourceId, Volume
+    | summarize Values = make_set(CounterValue, 2) by ResourceId, Volume, TimeGenerated
+    | summarize arg_max(TimeGenerated, Values) by ResourceId, Volume
+    | project ResourceId, Volume, PercentConflict = array_length(Values) != 1,
+        PercentFree = iff(array_length(Values) == 1, todouble(Values[0]), real(null)), PercentObserved = TimeGenerated;
+let SpaceSamples =
+    Perf
+    | where TimeGenerated >= ago(15m)
+    | where ObjectName == "LogicalDisk" and CounterName == "Free Megabytes"
+    | where isnotnull(CounterValue) and CounterValue >= 0.0
+    | extend ResourceId = tolower(_ResourceId), Volume = tolower(InstanceName)
+    | join kind=inner Expected on ResourceId, Volume
+    | summarize Values = make_set(CounterValue, 2) by ResourceId, Volume, TimeGenerated
+    | summarize arg_max(TimeGenerated, Values) by ResourceId, Volume
+    | project ResourceId, Volume, SpaceConflict = array_length(Values) != 1,
+        FreeMBytes = iff(array_length(Values) == 1, todouble(Values[0]), real(null)), SpaceObserved = TimeGenerated;
+Expected
+| join kind=leftouter PercentSamples on ResourceId, Volume
+| join kind=leftouter SpaceSamples on ResourceId, Volume
+| extend MonitoringState = case(
+    isnull(PercentObserved) or isnull(SpaceObserved), "Unknown: missing disk counter",
+    PercentConflict or SpaceConflict, "Unknown: conflicting disk counters",
+    PercentObserved > now() or SpaceObserved > now(), "Unknown: future disk counter",
+    PercentObserved < FreshnessCutoff or SpaceObserved < FreshnessCutoff, "Unknown: stale disk counter",
+    abs(datetime_diff("second", PercentObserved, SpaceObserved)) > MaxPairSkewSeconds,
+        "Unknown: disk counters out of sync",
+    PercentFree < ThresholdPercent and FreeMBytes < ThresholdMBytes, "Low disk space",
+    "Within threshold")
+| where MonitoringState != "Within threshold"
+| project ResourceId, Volume, MonitoringState, PercentFree, FreeMBytes, PercentObserved, SpaceObserved

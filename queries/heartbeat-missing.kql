@@ -1,16 +1,25 @@
-// Purpose: report missing/stale AMA heartbeats only for servers explicitly expected online.
-// Source: configured expected-server list joined to Log Analytics Heartbeat.
-// Output: online servers with no heartbeat in 15 minutes; intentional shutdowns must be excluded.
-let ExpectedServers = datatable(ResourceId:string, ExpectedOnline:bool)[];
+// Purpose: report missing/stale heartbeats for servers explicitly expected online.
+// Source: expected-server list joined to Log Analytics Heartbeat. Output: missing monitoring evidence.
+// Use the latest expected-online start time; deliberately powered-off servers must be excluded.
+let ExpectedServers = datatable(ResourceId:string, ExpectedOnlineSince:datetime)[];
+let HistoryStart = ago(1d);
+let MissingCutoff = ago(15m);
+let OnboardingCutoff = ago(15m);
 let LatestHeartbeat =
     Heartbeat
-    | where TimeGenerated >= ago(1d)
+    | where TimeGenerated >= HistoryStart
     | summarize LastHeartbeat = max(TimeGenerated) by ResourceId = tolower(_ResourceId);
 ExpectedServers
-| where ExpectedOnline
 | extend ResourceId = tolower(ResourceId)
 | join kind=leftouter LatestHeartbeat on ResourceId
-| where isnull(LastHeartbeat) or LastHeartbeat < ago(15m)
-| project ResourceId, ExpectedOnline, LastHeartbeat,
-    MonitoringState = iff(isnull(LastHeartbeat), "Never reported", "Stale or missing")
+| extend MonitoringState = case(
+    isempty(ResourceId) or isnull(ExpectedOnlineSince) or ExpectedOnlineSince > now(),
+        "Invalid expected-online configuration",
+    ExpectedOnlineSince > OnboardingCutoff, "Onboarding grace",
+    LastHeartbeat > now(), "Unknown: future heartbeat",
+    isnull(LastHeartbeat) or LastHeartbeat < ExpectedOnlineSince, "No heartbeat observed in available history during expected-online period",
+    LastHeartbeat < MissingCutoff, "Stale heartbeat",
+    "Heartbeat observed")
+| where MonitoringState !in ("Onboarding grace", "Heartbeat observed")
+| project ResourceId, ExpectedOnlineSince, LastHeartbeat, MonitoringState
 | order by ResourceId asc

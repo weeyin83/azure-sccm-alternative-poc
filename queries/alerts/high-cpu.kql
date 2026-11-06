@@ -1,0 +1,35 @@
+// Purpose: flag sustained high CPU or insufficient CPU evidence for expected servers.
+// Source: Perf. Output: ResourceId, state, sample count, mean CPU and last sample time.
+// Populate ExpectedServers privately and review the thresholds before use.
+let ExpectedServers = datatable(ResourceId:string)[];
+let ThresholdPercent = 90.0;
+let MinimumSamples = 3;
+let FreshnessCutoff = ago(5m);
+let Expected =
+    ExpectedServers
+    | where isnotempty(ResourceId)
+    | extend ResourceId = tolower(ResourceId)
+    | distinct ResourceId;
+let Samples =
+    Perf
+    | where TimeGenerated >= ago(15m)
+    | where ObjectName == "Processor" and CounterName == "% Processor Time" and InstanceName == "_Total"
+    | where isnotnull(CounterValue) and CounterValue between (0.0 .. 100.0)
+    | extend ResourceId = tolower(_ResourceId)
+    | join kind=inner Expected on ResourceId
+    | summarize Values = make_set(CounterValue, 2) by ResourceId, TimeGenerated
+    | extend Conflicting = array_length(Values) != 1, SampleValue = todouble(Values[0])
+    | summarize Samples = count(), ConflictingSamples = countif(Conflicting),
+        MeanCpuPercent = avg(SampleValue), LastSample = max(TimeGenerated) by ResourceId;
+Expected
+| join kind=leftouter Samples on ResourceId
+| extend MonitoringState = case(
+    ConflictingSamples > 0, "Unknown: conflicting CPU samples",
+    isnull(Samples) or Samples < MinimumSamples, "Unknown: insufficient CPU samples",
+    LastSample > now(), "Unknown: future CPU sample",
+    LastSample < FreshnessCutoff, "Unknown: stale CPU samples",
+    MeanCpuPercent > ThresholdPercent, "High CPU",
+    "Within threshold")
+| where MonitoringState != "Within threshold"
+| project ResourceId, MonitoringState, Samples = coalesce(Samples, 0),
+    MeanCpuPercent = iff(ConflictingSamples > 0, real(null), MeanCpuPercent), LastSample

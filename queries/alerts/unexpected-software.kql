@@ -1,0 +1,24 @@
+// Purpose: flag recent software additions outside the approved name/publisher baseline.
+// Source: ConfigurationChange. Output: ResourceId, unexpected addition count and latest change time.
+// Populate ExpectedServers and AllowedSoftware privately; incomplete software identities are not allowlisted.
+let ExpectedServers = datatable(ResourceId:string)[];
+let AllowedSoftware = datatable(ResourceId:string, SoftwareName:string, Publisher:string)[];
+let Expected =
+    ExpectedServers
+    | where isnotempty(ResourceId)
+    | extend ResourceId = tolower(ResourceId)
+    | distinct ResourceId;
+let Allowed =
+    AllowedSoftware
+    | where isnotempty(ResourceId) and isnotempty(SoftwareName) and isnotempty(Publisher)
+    | extend ResourceId = tolower(ResourceId), SoftwareKey = tolower(SoftwareName), PublisherKey = tolower(Publisher)
+    | distinct ResourceId, SoftwareKey, PublisherKey;
+ConfigurationChange
+| where TimeGenerated >= ago(1h)
+| where ConfigChangeType == "Software" and ChangeCategory == "Added"
+| extend ResourceId = tolower(_ResourceId), SoftwareKey = tolower(SoftwareName), PublisherKey = tolower(Publisher)
+| join kind=inner Expected on ResourceId
+| join kind=leftanti Allowed on ResourceId, SoftwareKey, PublisherKey
+| summarize AdditionCount = count(), LastAddition = max(TimeGenerated) by ResourceId
+| extend MonitoringState = "Unexpected software addition observed"
+| project ResourceId, MonitoringState, AdditionCount, LastAddition

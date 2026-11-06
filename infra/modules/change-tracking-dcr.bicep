@@ -12,7 +12,7 @@ param workspaceResourceId string
 @maxLength(250)
 param registryInfo array
 
-@description('Approved Windows file items using the CTI fileInfo schema, with synthetic contents.')
+@description('Approved Windows file items with synthetic contents; the draft CTI setting shape requires service-side validation.')
 @minLength(1)
 @maxLength(500)
 param fileInfo array

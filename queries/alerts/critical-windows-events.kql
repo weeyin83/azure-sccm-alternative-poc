@@ -1,0 +1,17 @@
+// Purpose: flag explicitly approved critical Windows event signatures.
+// Source: Event. Output: ResourceId, critical event count and latest event time.
+// Populate ExpectedEvents privately; an empty list intentionally returns no records.
+let ExpectedEvents = datatable(ResourceId:string, EventLog:string, Source:string, EventID:int)[];
+let Expected =
+    ExpectedEvents
+    | where isnotempty(ResourceId) and isnotempty(EventLog) and isnotempty(Source)
+    | extend ResourceId = tolower(ResourceId), LogKey = tolower(EventLog), SourceKey = tolower(Source)
+    | distinct ResourceId, LogKey, SourceKey, EventID;
+Event
+| where TimeGenerated >= ago(10m)
+| where EventLog in~ ("System", "Application") and EventLevel == 1
+| extend ResourceId = tolower(_ResourceId), LogKey = tolower(EventLog), SourceKey = tolower(Source)
+| join kind=inner Expected on ResourceId, LogKey, SourceKey, EventID
+| summarize EventCount = count(), LastEvent = max(TimeGenerated) by ResourceId
+| extend MonitoringState = "Critical event observed"
+| project ResourceId, MonitoringState, EventCount, LastEvent

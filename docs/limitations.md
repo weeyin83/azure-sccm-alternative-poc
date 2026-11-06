@@ -20,6 +20,12 @@
 - CTI collects all Windows services rather than a collection-time allowlist.
   Current published Windows software/service limits are 250 items each; verify
   required items are represented before claiming complete estate coverage.
+- CTI can report user-level applications as removed when a user signs out.
+  A software removal record is not by itself proof of an uninstall. See the
+  [CTI overview](https://learn.microsoft.com/en-us/azure/azure-change-tracking-inventory/overview-monitoring-agent).
+- The owner has deferred installing or removing a test application. Software
+  change queries can be shown only with suitable existing approved evidence;
+  an install/removal demonstration remains unvalidated.
 - The US$200/month target is not a hard Azure spending cap. Usage and applicable
   licensing must be measured, and attributable existing services and host costs
   included before deployment. Budgets notify; they do not stop consumption.

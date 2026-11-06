@@ -4,6 +4,9 @@ param name string
 @description('Alert display name.')
 param displayName string
 
+@description('Azure region for the log search alert. Verify regional support for the selected workspace.')
+param location string
+
 @description('Description including purpose and tuning rationale.')
 param alertDescription string
 
@@ -34,6 +37,24 @@ param evaluationFrequency string = 'PT5M'
 ])
 param windowSize string = 'PT15M'
 
+@description('Explicit query history. It must cover the longest lookback in the query and be at least the alert window.')
+@allowed([
+  'PT10M'
+  'PT15M'
+  'PT30M'
+  'PT1H'
+  'PT2H'
+  'P1D'
+  'P2D'
+])
+param queryTimeRange string
+
+@description('Choose automatic resolution explicitly. For stateful alerts, missing or stale data must not masquerade as recovery.')
+param autoMitigate bool
+
+@description('Split on the query output ResourceId column. This creates a separate, billable series for each value.')
+param splitByResourceId bool
+
 @description('Azure Monitor alert severity: 0 (critical) through 4 (verbose).')
 @minValue(0)
 @maxValue(4)
@@ -47,7 +68,7 @@ param tags object = {}
 
 resource alert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
   name: name
-  location: 'global'
+  location: location
   kind: 'LogAlert'
   tags: tags
   properties: {
@@ -57,6 +78,7 @@ resource alert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
     severity: severity
     evaluationFrequency: evaluationFrequency
     windowSize: windowSize
+    overrideQueryTimeRange: queryTimeRange
     scopes: [
       workspaceResourceId
     ]
@@ -67,6 +89,15 @@ resource alert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
           timeAggregation: 'Count'
           operator: 'GreaterThan'
           threshold: 0
+          dimensions: splitByResourceId ? [
+            {
+              name: 'ResourceId'
+              operator: 'Include'
+              values: [
+                '*'
+              ]
+            }
+          ] : []
         }
       ]
     }
@@ -75,7 +106,7 @@ resource alert 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
         actionGroupResourceId
       ]
     }
-    autoMitigate: true
+    autoMitigate: autoMitigate
   }
 }
 

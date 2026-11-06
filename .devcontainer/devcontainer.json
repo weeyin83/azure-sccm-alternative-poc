@@ -1,8 +1,6 @@
 {
   "name": "Azure infrastructure and HTML starter",
-  "build": {
-    "dockerfile": "Dockerfile"
-  },
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "features": {
     "ghcr.io/devcontainers/features/azure-cli:1": {
       "version": "latest",
@@ -10,6 +8,10 @@
     },
     "ghcr.io/devcontainers/features/github-cli:1": {
       "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/powershell:2": {
+      "version": "latest",
+      "modules": "PSScriptAnalyzer"
     },
     "ghcr.io/devcontainers/features/terraform:1": {
       "version": "latest",
@@ -28,7 +30,7 @@
     "AZURE_EXTENSION_USE_DYNAMIC_INSTALL": "no",
     "AZURE_BICEP_USE_BINARY_FROM_PATH": "true"
   },
-  "postCreateCommand": "git lfs version && bash .devcontainer/setup-user.sh && bash scripts/check-tools.sh",
+  "postCreateCommand": "bash .devcontainer/setup-user.sh && bash scripts/check-tools.sh && pwsh -NoLogo -NoProfile -NonInteractive -File scripts/check-powershell.ps1",
   "forwardPorts": [5500],
   "portsAttributes": {
     "5500": {

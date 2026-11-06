@@ -1,0 +1,35 @@
+// Purpose: flag sustained low available memory or insufficient evidence for expected servers.
+// Source: Perf. Output: ResourceId, state, sample count, mean available MB and last sample time.
+// Populate ExpectedServers privately and review the thresholds before use.
+let ExpectedServers = datatable(ResourceId:string)[];
+let ThresholdMBytes = 500.0;
+let MinimumSamples = 3;
+let FreshnessCutoff = ago(5m);
+let Expected =
+    ExpectedServers
+    | where isnotempty(ResourceId)
+    | extend ResourceId = tolower(ResourceId)
+    | distinct ResourceId;
+let Samples =
+    Perf
+    | where TimeGenerated >= ago(15m)
+    | where ObjectName == "Memory" and CounterName == "Available MBytes"
+    | where isnotnull(CounterValue) and CounterValue >= 0.0
+    | extend ResourceId = tolower(_ResourceId)
+    | join kind=inner Expected on ResourceId
+    | summarize Values = make_set(CounterValue, 2) by ResourceId, TimeGenerated
+    | extend Conflicting = array_length(Values) != 1, SampleValue = todouble(Values[0])
+    | summarize Samples = count(), ConflictingSamples = countif(Conflicting),
+        MeanAvailableMBytes = avg(SampleValue), LastSample = max(TimeGenerated) by ResourceId;
+Expected
+| join kind=leftouter Samples on ResourceId
+| extend MonitoringState = case(
+    ConflictingSamples > 0, "Unknown: conflicting memory samples",
+    isnull(Samples) or Samples < MinimumSamples, "Unknown: insufficient memory samples",
+    LastSample > now(), "Unknown: future memory sample",
+    LastSample < FreshnessCutoff, "Unknown: stale memory samples",
+    MeanAvailableMBytes < ThresholdMBytes, "Low available memory",
+    "Within threshold")
+| where MonitoringState != "Within threshold"
+| project ResourceId, MonitoringState, Samples = coalesce(Samples, 0),
+    MeanAvailableMBytes = iff(ConflictingSamples > 0, real(null), MeanAvailableMBytes), LastSample

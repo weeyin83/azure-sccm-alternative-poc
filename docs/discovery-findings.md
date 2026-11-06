@@ -14,11 +14,68 @@ sanitised conclusions. The owner's review is recorded below; Phase 2 is now
 documented in [architecture](architecture.md). The owner has since approved
 the design for Build; deployment remains separately gated.
 
+## Read-only refresh: 6 November 2026
+
+The approved subscription scope was rechecked after the owner reported that
+the Arc servers were online. All **298 checks succeeded**. All three Windows
+Arc resources now report **Connected**, superseding the 5 November connectivity
+snapshot below. This is Arc control-plane connectivity only; it does not prove
+AMA health, guest availability, DCR delivery or data ingestion.
+
+| Surface | Refreshed observation |
+| --- | --- |
+| Arc connectivity | 3 Connected; 0 Disconnected. The previously intentional shutdown is no longer the current reported state. |
+| AMA and Change Tracking | 2 servers report successful provisioning for both extensions. In the later 10:10 UTC refresh, AMA handler version is 1.45.0.0 and CTI handler version is 2.42.0.0 on both. These are observed control-plane versions and provisioning states, not proof of guest health or a recommendation to pin a version. One server still has neither extension observed. |
+| DCR associations | The two extension-equipped servers have 3 and 2 associations; the remaining server has none. The existing performance/event rule still collects both Windows performance and event streams and includes a Security selector. CTI and SQL assessment associations remain present. |
+| Other monitoring resources | 6 DCRs, 1 enabled metric alert and 4 Action Groups were observed in the approved discovery scope. The alert's equivalence and exact target remain unresolved; preserve it pending review. |
+| Nominated workspace | The owner-nominated `arc-loganalytics` workspace remains observed with 30-day retention, pay-as-you-go pricing and the ChangeTracking solution. No workspace setting was changed. |
+
+No Azure configuration, extensions, associations, alerts or guest systems were
+changed. Select and explicitly approve a named test server before any
+guest-level validation or demonstration.
+
+### Later read-only drift check
+
+A further discovery completed at approximately 10:10 UTC on 6 November; all
+298 checks succeeded and all three Arc resources still reported Connected.
+Compared with the earlier snapshot, one server's CTI extension reported a
+handler and instance version change from 2.38.0.0 to 2.42.0.0; another
+non-PoC extension also reported a version change. Their cause has not been
+established. Review this drift and current extension health before selecting
+any future stage parameters. No extension was updated by this PoC.
+
+The comparison uses captured discovery fields only and does not establish
+complete visibility or rule out guest or policy changes. The private review
+remains **not ready for what-if or deployment**.
+
+### Read-only telemetry aggregate
+
+A separate Logs Query API check on 6 November 2026 queried the nominated
+workspace for the three selected servers over the preceding 24 hours. It
+returned aggregate counts only, without returning guest records.
+
+| Table | Servers with at least one record |
+| --- | ---: |
+| Heartbeat | 2 of 3 |
+| Perf | 1 of 3 |
+| Event | 1 of 3 |
+| ConfigurationData | 2 of 3 |
+| ConfigurationChange | 2 of 3 |
+
+These are bounded observations, not proof of continuous collection or current
+agent health. Heartbeat records can come from sources other than AMA, and an
+absence of matching events does not itself indicate a fault. Investigate the
+coverage gaps against the reviewed DCR associations and collection settings;
+do not infer guest failure or add collection from these counts alone. Alert
+behaviour and guest-level health have not been tested. The query requires
+workspace permissions, sends selected resource IDs to the Logs API and can
+incur query charges; see the [telemetry instructions](../README.md#check-telemetry-without-changing-resources).
+
 ## Owner review: 5 November 2026
 
-- The Arc machines are deliberately powered off, not unexpectedly disconnected.
-  They can be started for live checks, validation and demonstration; they do not
-  need to be on for documentation or local Build work.
+- The Arc machines were deliberately powered off during the original discovery.
+  The 6 November read-only refresh now reports all 3 as Connected; that status
+  does not establish guest or monitoring health.
 - Focus workspace selection on the nominated existing Arc workspace, excluding
   MCAPS and default workspaces. A read-only follow-up confirmed this is already
   the destination for both monitored servers, with 30-day retention and a
@@ -38,8 +95,8 @@ the design for Build; deployment remains separately gated.
 
 | Surface | Observed configuration |
 | --- | --- |
-| Windows Arc estate | 3 servers, all reporting **Disconnected**. OS, Arc agent version and last status change are populated in JSON and CSV. |
-| AMA and Change Tracking | Both extensions report successful provisioning on 2 servers. Neither extension was observed on the remaining server. Provisioning does not prove current operation. |
+| Windows Arc estate (5 November snapshot) | 3 servers, all reporting **Disconnected** at that time. The 6 November refresh above now reports all 3 **Connected**. |
+| AMA and Change Tracking (5 November snapshot) | Both extensions reported successful provisioning on 2 servers. The 6 November refresh confirms the same coverage and records the observed versions above. Provisioning does not prove current operation. |
 | Dependency Agent / legacy MMA | Neither extension was observed on any of the 3 servers. Guest-installed MMA cannot be excluded by control-plane discovery. |
 | DCRs | 6 existing rules across the approved scope. The 2 extension-equipped servers have 3 and 2 associations respectively; the remaining server has none. |
 | Performance and events | 1 server has an associated performance/event rule. Both extension-equipped servers have Change Tracking and SQL assessment rules. Preserve the unrelated SQL assessment collection. |
@@ -51,10 +108,9 @@ the design for Build; deployment remains separately gated.
 
 ## Gaps, conflicts and duplicates
 
-1. **Connectivity is required for live validation, not a current fault.** All 3
-   resources report disconnected with late-October status changes. The owner
-   confirmed intentional shutdown. Arrange power-on of the named test server
-   before live pre-deployment checks and validation. No guest recovery was attempted.
+1. **Connectivity has recovered at the control plane.** All 3 resources now
+   report Connected. Confirm the selected host and AMA/CTI data path before
+   treating guest collection as healthy. No guest-level checks were performed.
 2. **Monitoring coverage is inconsistent.** One server lacks observed extensions
    and associations. Another has Change Tracking and SQL assessment rules, but
    no associated performance/event rule.
@@ -80,6 +136,16 @@ the design for Build; deployment remains separately gated.
    metric alert and all Action Groups. Inspect assignment parameters, scopes,
    exclusions, exemptions and any Defender-managed onboarding before proposing
    deployment policies or alerts.
+8. **The captured CTI settings need clarification, not automatic correction.**
+   One Windows CTI DCR in the 6 November snapshot specifies a 2,700-second
+   file interval and a 36,000-second inventory interval; no file-item list was
+   present in its captured settings. The current
+   [support matrix](https://learn.microsoft.com/en-us/azure/azure-change-tracking-inventory/change-tracking-inventory-support-matrix)
+   gives 1,800–2,400 seconds for Windows files and says only Windows file and
+   service frequencies are customisable. This is configuration evidence, not
+   proof of the actual scan schedule or of missing file monitoring. Preserve
+   the existing rule and confirm the discrepancy with its owner and Microsoft
+   guidance before proposing any changes.
 
 All collection checks succeeded, but RBAC-filtered visibility, Resource Graph
 eventual consistency and configuration-only evidence still limit conclusions.
@@ -101,8 +167,9 @@ its suitability is not yet confirmed.
 
 1. Review the latest JSON report, CSV and private summary with the owner; the
    final run has 298 successful checks and no failed checks.
-2. Confirm that all 3 disconnected servers are intended PoC targets and identify
-   the named test server. Any recovery or configuration change requires approval.
+2. Confirm that all 3 connected servers are intended PoC targets and identify
+   the named test server. Guest validation and configuration changes still
+   require their applicable approval.
 3. Use the nominated existing Arc workspace as the preferred reuse candidate;
    verify remaining data-handling/access checks and prepare a scoped security
    collection cleanup list without changing shared resources.
@@ -118,7 +185,9 @@ its suitability is not yet confirmed.
   repeated graph token, untrusted ARM continuation URL and missing dependency.
 - Tests cover multi-page Resource Graph results, inherited initiative/member
   reads, endpoint-only associations, alert references, JSON/CSV outputs and
-  explicit incomplete-report failures. Tests do not contact Azure.
+  explicit incomplete-report failures. Additional tests reject insecure,
+  linked or unignored evidence directories and check that warning messages
+  omit resource identifiers. Tests do not contact Azure.
 - PSScriptAnalyzer completed across all PowerShell under `scripts/` and `tests/`
   with no warnings or errors.
 - The initial live run exposed Azure CLI's rejection of built-in policy IDs by
@@ -134,6 +203,13 @@ metadata, public extension settings, policy parameters, log alert queries,
 webhook destinations and notification contact details. Restrict access, retain
 only as long as needed, and do not commit, attach or publish raw evidence.
 An ignore rule is not encryption or access control.
+
+Earlier local discovery outputs had group/other read and write permissions.
+On 6 November their owned directories and files were restricted to the current
+user; the earlier baseline still matches the hash recorded in its prior
+private review. This cannot establish whether the files were accessed or
+changed before that hash was recorded. New discovery and review outputs now
+require an owner-only, Git-ignored evidence directory.
 
 Discovery only reads configuration: it creates no Azure resources, installs no
 agents, enables no collection and sends no notifications. It does not query
