@@ -1,0 +1,10 @@
+// Purpose: investigate critical and error Windows events on selected servers.
+// Source: Log Analytics Event. Output: event time, severity, source, ID and description.
+// Populate with approved Arc resource IDs; an empty list intentionally returns no records.
+let ServerIds = dynamic([]);
+Event
+| where TimeGenerated >= ago(24h)
+| where _ResourceId in~ (ServerIds)
+| where EventLog in ("System", "Application") and EventLevel in (1, 2)
+| project TimeGenerated, ResourceId = _ResourceId, Computer, EventLog, EventLevel, Source, EventID, RenderedDescription
+| order by TimeGenerated desc

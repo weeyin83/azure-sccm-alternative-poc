@@ -1,0 +1,27 @@
+// Purpose: reconcile the latest software inventory snapshot with later tracked changes.
+// Source: Log Analytics ConfigurationData and ConfigurationChange.
+// Output: last observed state per server/software/publisher; observation time is not a real-time guarantee.
+// Populate with approved Arc resource IDs; an empty list intentionally returns no records.
+let ServerIds = dynamic([]);
+let Inventory =
+    ConfigurationData
+    | where TimeGenerated >= ago(30d)
+    | where _ResourceId in~ (ServerIds)
+    | where ConfigDataType == "Software"
+    | where isnotempty(SoftwareName)
+    | project TimeGenerated, ResourceId = _ResourceId, Computer, SoftwareName, Publisher,
+        CurrentVersion, State = "Present", Evidence = "Inventory";
+let Changes =
+    ConfigurationChange
+    | where TimeGenerated >= ago(30d)
+    | where _ResourceId in~ (ServerIds)
+    | where ConfigChangeType == "Software" and ChangeCategory in ("Added", "Removed")
+    | where isnotempty(SoftwareName)
+    | project TimeGenerated, ResourceId = _ResourceId, Computer, SoftwareName, Publisher,
+        CurrentVersion = "", State = iff(ChangeCategory == "Removed", "Removed", "Present"),
+        Evidence = "Change";
+union Inventory, Changes
+| summarize arg_max(TimeGenerated, *) by ResourceId, SoftwareName, Publisher
+| where State == "Present"
+| project ResourceId, Computer, SoftwareName, Publisher, CurrentVersion, LastObserved = TimeGenerated, Evidence
+| order by Computer asc, SoftwareName asc

@@ -1,0 +1,10 @@
+// Purpose: investigate observed software removals on selected servers.
+// Source: Log Analytics ConfigurationChange. Output: removal time, server, name and publisher.
+// Populate with approved Arc resource IDs; an empty list intentionally returns no records.
+let ServerIds = dynamic([]);
+ConfigurationChange
+| where TimeGenerated >= ago(7d)
+| where _ResourceId in~ (ServerIds)
+| where ConfigChangeType == "Software" and ChangeCategory == "Removed"
+| project TimeGenerated, ResourceId = _ResourceId, Computer, SoftwareName, Publisher, ChangeCategory
+| order by TimeGenerated desc

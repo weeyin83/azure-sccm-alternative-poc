@@ -11,7 +11,8 @@ The read-only collector is [Invoke-ArcDiscovery.ps1](../scripts/discovery/Invoke
 See [the run instructions](../README.md) for prerequisites and execution.
 Raw evidence is in the ignored output directory; this document contains only
 sanitised conclusions. The owner's review is recorded below; Phase 2 is now
-documented in [architecture](architecture.md), awaiting Design approval.
+documented in [architecture](architecture.md). The owner has since approved
+the design for Build; deployment remains separately gated.
 
 ## Owner review: 5 November 2026
 
@@ -105,10 +106,10 @@ its suitability is not yet confirmed.
 3. Use the nominated existing Arc workspace as the preferred reuse candidate;
    verify remaining data-handling/access checks and prepare a scoped security
    collection cleanup list without changing shared resources.
-4. Review the [Phase 2 architecture and cost model](architecture.md).
-   **Stop for Design approval before Build**, and obtain separate deployment
-   approval before Azure changes. No Bicep, what-if, deployment or guest changes
-   were performed during Discovery or Design.
+4. The owner has approved the [Phase 2 architecture and cost model](architecture.md)
+   for Build. Obtain separate deployment approval before Azure changes.
+   No Bicep, what-if, deployment or guest changes were performed during
+   Discovery or Design.
 
 ## Local validation
 

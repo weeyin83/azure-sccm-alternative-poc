@@ -1,0 +1,13 @@
+// Purpose: list Windows Azure Arc resources and control-plane connection state.
+// Source: Azure Resource Graph Resources. Output: Azure resource inventory only.
+// This does not provide guest hardware inventory. No subscription IDs are embedded.
+Resources
+| where type =~ 'microsoft.hybridcompute/machines'
+| where tostring(properties.osType) =~ 'windows'
+| project id, name, resourceGroup, subscriptionId, location,
+    osName = tostring(properties.osName),
+    osVersion = tostring(properties.osVersion),
+    agentVersion = tostring(properties.agentVersion),
+    status = tostring(properties.status),
+    lastStatusChange = todatetime(properties.lastStatusChange)
+| order by name asc

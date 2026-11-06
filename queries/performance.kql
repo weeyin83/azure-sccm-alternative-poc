@@ -1,0 +1,13 @@
+// Purpose: show collected CPU, memory and disk counter samples for selected servers.
+// Source: Log Analytics Perf. Output: timestamp, server, counter, instance and value.
+// Populate with approved Arc resource IDs; an empty list intentionally returns no records.
+let ServerIds = dynamic([]);
+Perf
+| where TimeGenerated >= ago(24h)
+| where _ResourceId in~ (ServerIds)
+| where (ObjectName == "Processor" and CounterName == "% Processor Time" and InstanceName == "_Total")
+    or (ObjectName == "Memory" and CounterName in ("Available MBytes", "% Committed Bytes In Use"))
+    or (ObjectName == "LogicalDisk" and InstanceName != "_Total" and CounterName in
+        ("Free Megabytes", "% Free Space", "% Idle Time", "Disk Reads/sec", "Disk Writes/sec", "Avg. Disk sec/Read", "Avg. Disk sec/Write"))
+| project TimeGenerated, ResourceId = _ResourceId, Computer, ObjectName, CounterName, InstanceName, CounterValue
+| order by TimeGenerated desc

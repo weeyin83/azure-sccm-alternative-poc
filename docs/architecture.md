@@ -1,6 +1,6 @@
 # Architecture: Azure Arc Configuration Manager replacement PoC
 
-**Phase 2 design for approval, 5 November 2026. No build or deployment authorised.**
+**Phase 2 design approved for Build. Deployment remains separately gated.**
 
 ## 1. Reviewed scope and decisions
 
@@ -405,7 +405,7 @@ combined.
 
 ## 11. Deployment, cleanup and rollback plan
 
-**Both Build and deployment remain gated.** After Design approval, implement and
+**Build is approved; deployment remains gated.** After Design approval, implement and
 locally validate Bicep, PowerShell and query fixtures. Run Bicep build/lint,
 PSScriptAnalyzer and target-scope what-if in the approved Build/pre-deployment
 process. Review all create/modify/delete operations before explicit deployment
@@ -488,10 +488,10 @@ Agent for presentation. Core acceptance must not depend on Workbooks.
 - Pricing and licensing ambiguity is handled conservatively above; confirm exact
   meters/entitlements instead of claiming free monitoring or a guaranteed bill.
 
-**Requested next approval:** accept the reuse-first, custom AMA/KQL architecture,
-the scoped cleanup process and the provisional cost envelope, then authorise
-Build. A separate exact change/cleanup plan and explicit approval are still
-required before any deployment or deletion. The test-server identity,
+The owner has approved Build on the reuse-first, custom AMA/KQL architecture,
+scoped cleanup process and provisional cost envelope. A separate exact
+change/cleanup plan and explicit approval are still required before any
+deployment or deletion. The test-server identity,
 notification destinations, runtime schedule and licence entitlements can remain
 private parameters; deployment cannot proceed without them.
 

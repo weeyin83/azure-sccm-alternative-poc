@@ -1,0 +1,11 @@
+// Purpose: investigate collected registry changes on selected servers.
+// Source: Log Analytics ConfigurationChange. Output: time, server, key, value name and change.
+// Populate with approved Arc resource IDs; an empty list intentionally returns no records.
+// Value contents are intentionally omitted because they may be sensitive.
+let ServerIds = dynamic([]);
+ConfigurationChange
+| where TimeGenerated >= ago(7d)
+| where _ResourceId in~ (ServerIds)
+| where ConfigChangeType == "Registry"
+| project TimeGenerated, ResourceId = _ResourceId, Computer, Hive, RegistryKey, ValueName, ChangeCategory, FieldsChanged
+| order by TimeGenerated desc

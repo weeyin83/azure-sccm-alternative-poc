@@ -1,7 +1,7 @@
 # Azure Arc Configuration Manager replacement PoC
 
 Demonstrate selected Windows Server management capabilities using Azure Arc and
-native Azure services. **Current phase: Design review.** No infrastructure has been
+native Azure services. **Current phase: Build, in progress.** No infrastructure has been
 deployed. Workbooks are stretch scope, not a core prerequisite.
 
 Read-only discovery has completed across the approved scope. See the
@@ -10,8 +10,17 @@ servers report disconnected because the owner has deliberately powered them off.
 Discovery review is recorded. The [proposed architecture](docs/architecture.md)
 reuses the nominated Arc workspace, excludes deprecated monitoring components,
 and targets US$200/month subject to measured usage and attributable existing
-costs. **Awaiting Design approval before Build.** No cleanup or Azure changes
-have run.
+costs. The owner has approved the design for Build. Deployment, cleanup and
+guest changes still require explicit approval; none have run.
+
+The Build is **not complete or deployable**. Independent Bicep modules are in
+[infra/modules/](infra/modules/); the entry point, reuse/preflight and
+deployment tooling, remaining alerts, live-validation plan, demonstration
+script and end-to-end validation remain outstanding. The [query library](queries/)
+is still draft and is not checked against live data. See the
+[proposed cutover and Build sources](docs/deployment.md). Do not deploy the
+modules directly: they do not detect existing resource names or equivalent
+collection.
 
 ## Run read-only discovery
 
@@ -64,9 +73,9 @@ a duplicate alert. Policy candidates are text-based evidence, not effective
 compliance or exemption evaluation.
 
 Keep [discovery findings](docs/discovery-findings.md) sanitised when rerunning
-discovery. Review the [architecture and cost model](docs/architecture.md) before
-authorising Build; explicit deployment approval is still required before Azure
-changes, including any cleanup of existing security roles or collections.
+discovery. Review the [architecture and cost model](docs/architecture.md);
+explicit deployment approval is still required before Azure changes, including
+any cleanup of existing security roles or collections.
 
 ## Local validation
 
@@ -76,9 +85,17 @@ Invoke-ScriptAnalyzer -Path ./scripts -Recurse -Severity Warning,Error
 Invoke-ScriptAnalyzer -Path ./tests -Recurse -Severity Warning,Error
 ```
 
-The tests mock Azure CLI and must not contact Azure. Bicep compilation, linting,
-what-if and deployments belong to later approved phases; no Bicep files have
-been built yet.
+The PowerShell tests mock Azure CLI and must not contact Azure. The Bicep
+module contract tests are also local:
+
+```bash
+python3 -m unittest discover -s tests/infra -v
+```
+
+Individual Bicep modules can be checked with `az bicep build --file <file>
+--stdout` and `az bicep lint --file <file>`. Target-scope what-if is pending
+the entry point, safe preflight and reviewed private parameters; it has not
+been run.
 
 ## Git push from the dev container
 

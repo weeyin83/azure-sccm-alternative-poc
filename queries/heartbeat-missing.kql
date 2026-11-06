@@ -1,0 +1,16 @@
+// Purpose: report missing/stale AMA heartbeats only for servers explicitly expected online.
+// Source: configured expected-server list joined to Log Analytics Heartbeat.
+// Output: online servers with no heartbeat in 15 minutes; intentional shutdowns must be excluded.
+let ExpectedServers = datatable(ResourceId:string, ExpectedOnline:bool)[];
+let LatestHeartbeat =
+    Heartbeat
+    | where TimeGenerated >= ago(1d)
+    | summarize LastHeartbeat = max(TimeGenerated) by ResourceId = tolower(_ResourceId);
+ExpectedServers
+| where ExpectedOnline
+| extend ResourceId = tolower(ResourceId)
+| join kind=leftouter LatestHeartbeat on ResourceId
+| where isnull(LastHeartbeat) or LastHeartbeat < ago(15m)
+| project ResourceId, ExpectedOnline, LastHeartbeat,
+    MonitoringState = iff(isnull(LastHeartbeat), "Never reported", "Stale or missing")
+| order by ResourceId asc

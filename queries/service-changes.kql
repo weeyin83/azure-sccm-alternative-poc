@@ -1,0 +1,11 @@
+// Purpose: investigate observed service state and startup-type changes.
+// Source: Log Analytics ConfigurationChange. Output: time, server, service and before/after state.
+// Populate with approved Arc resource IDs; an empty list intentionally returns no records.
+let ServerIds = dynamic([]);
+ConfigurationChange
+| where TimeGenerated >= ago(7d)
+| where _ResourceId in~ (ServerIds)
+| where ConfigChangeType == "WindowsServices"
+| project TimeGenerated, ResourceId = _ResourceId, Computer, SvcName, SvcDisplayName,
+    SvcChangeType, SvcPreviousState, SvcState, SvcPreviousStartupType, SvcStartupType
+| order by TimeGenerated desc

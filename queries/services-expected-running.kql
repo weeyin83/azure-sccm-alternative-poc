@@ -1,0 +1,20 @@
+// Purpose: compare fresh service inventory with an explicitly maintained expected-running list.
+// Source: Log Analytics ConfigurationData. Output: expected services not reported Running.
+// Add approved service names to ExpectedServices; an empty list returns no results.
+let ServerIds = dynamic([]);
+let ExpectedServices = dynamic([]);
+let Expected =
+    print serviceNames = ExpectedServices
+    | mv-expand SvcName = serviceNames to typeof(string)
+    | where isnotempty(SvcName);
+let LatestServices =
+    ConfigurationData
+    | where TimeGenerated >= ago(2d)
+    | where _ResourceId in~ (ServerIds)
+    | where ConfigDataType == "WindowsServices"
+    | summarize arg_max(TimeGenerated, SvcState, SvcStartupType, Computer) by ResourceId = _ResourceId, SvcName
+    | where SvcName in~ (Expected | project SvcName);
+LatestServices
+| where SvcState !~ "Running"
+| project ResourceId, Computer, SvcName, SvcState, SvcStartupType, LastObserved = TimeGenerated
+| order by Computer asc, SvcName asc
